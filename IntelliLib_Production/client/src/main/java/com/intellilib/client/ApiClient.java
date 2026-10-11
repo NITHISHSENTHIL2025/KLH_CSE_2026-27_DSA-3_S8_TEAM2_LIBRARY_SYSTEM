@@ -27,12 +27,39 @@ public final class ApiClient {
         return b;
     }
     private <T>T sendClass(HttpRequest req,Class<T> cls){
-        try{HttpResponse<String> r=http.send(req,HttpResponse.BodyHandlers.ofString());if(r.statusCode()>=400)throw new IllegalStateException(error(r.body()));return cls==Void.class?null:json.readValue(r.body(),cls);}catch(Exception e){throw e instanceof RuntimeException?(RuntimeException)e:new IllegalStateException(e.getMessage(),e);}
+        try{
+            HttpResponse<String> r=http.send(req,HttpResponse.BodyHandlers.ofString());
+            if(r.statusCode()>=400)throw new IllegalStateException(error(r.statusCode(),r.body()));
+            return cls==Void.class?null:json.readValue(r.body(),cls);
+        }catch(java.net.http.HttpTimeoutException e){
+            throw new IllegalStateException("The cloud server took too long to respond. Please wait a moment and try again.");
+        }catch(Exception e){
+            throw e instanceof RuntimeException?(RuntimeException)e:new IllegalStateException(e.getMessage(),e);
+        }
     }
     private <T>T sendType(HttpRequest req,TypeReference<T> type){
-        try{HttpResponse<String> r=http.send(req,HttpResponse.BodyHandlers.ofString());if(r.statusCode()>=400)throw new IllegalStateException(error(r.body()));return json.readValue(r.body(),type);}catch(Exception e){throw e instanceof RuntimeException?(RuntimeException)e:new IllegalStateException(e.getMessage(),e);}
+        try{
+            HttpResponse<String> r=http.send(req,HttpResponse.BodyHandlers.ofString());
+            if(r.statusCode()>=400)throw new IllegalStateException(error(r.statusCode(),r.body()));
+            return json.readValue(r.body(),type);
+        }catch(java.net.http.HttpTimeoutException e){
+            throw new IllegalStateException("The cloud server took too long to respond. Please wait a moment and try again.");
+        }catch(Exception e){
+            throw e instanceof RuntimeException?(RuntimeException)e:new IllegalStateException(e.getMessage(),e);
+        }
     }
-    private String error(String body){try{JsonNode n=json.readTree(body);return n.path("error").asText("Request failed");}catch(Exception e){return body==null?"Request failed":body;}}
+    private String error(int status,String body){
+        try{
+            JsonNode n=json.readTree(body);
+            String message=n.path("error").asText("");
+            if(!message.isBlank())return message;
+        }catch(Exception ignored){}
+        String text=body==null?"":body.stripLeading().toLowerCase(Locale.ROOT);
+        if(status==502||status==503||status==504||text.startsWith("<!doctype html")||text.startsWith("<html")){
+            return "The IntelliLib cloud service is temporarily unavailable (HTTP "+status+"). Wait a few seconds and try again.";
+        }
+        return "Request failed (HTTP "+status+").";
+    }
     private String body(Object x){try{return json.writeValueAsString(x);}catch(Exception e){throw new IllegalStateException(e);}}
 
     public boolean health(){try{HttpResponse<String> r=http.send(HttpRequest.newBuilder(URI.create(config.server()+"/api/health")).timeout(Duration.ofSeconds(70)).GET().build(),HttpResponse.BodyHandlers.ofString());return r.statusCode()==200;}catch(Exception e){return false;}}
