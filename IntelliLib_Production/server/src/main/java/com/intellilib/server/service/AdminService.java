@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -71,8 +73,15 @@ public class AdminService {
     public ImportResult importStudents(MultipartFile file, long adminId, String workstation) {
         int inserted = 0, updated = 0, skipped = 0;
         List<String> warnings = new ArrayList<>();
-        try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8);
-             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).build().parse(reader)) {
+        try (var reader = csvReader(file);
+             CSVParser parser = CSVFormat.DEFAULT.builder()
+                     .setHeader()
+                     .setSkipHeaderRecord(true)
+                     .setTrim(true)
+                     .setIgnoreHeaderCase(true)
+                     .setIgnoreSurroundingSpaces(true)
+                     .build()
+                     .parse(reader)) {
             int row = 1;
             for (CSVRecord r : parser) {
                 row++;
@@ -166,6 +175,14 @@ public class AdminService {
 
     private static void require(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");
+    }
+
+    private static BufferedReader csvReader(MultipartFile file) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8));
+        reader.mark(1);
+        int first = reader.read();
+        if (first != 0xFEFF) reader.reset();
+        return reader;
     }
 
     private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
