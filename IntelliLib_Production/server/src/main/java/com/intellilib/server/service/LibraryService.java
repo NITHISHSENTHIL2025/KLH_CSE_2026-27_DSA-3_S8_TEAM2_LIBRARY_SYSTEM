@@ -183,17 +183,62 @@ public class LibraryService {
     }
 
     public String exportCsv() {
-        try {
-            StringWriter out=new StringWriter();
-            var printer=CSVFormat.DEFAULT.builder().setHeader("title","author","isbn","category","keywords","resource_type","publisher","publication_year","description","language","rating").build().print(out);
-            jdbc.query("SELECT * FROM books WHERE active=TRUE ORDER BY title", rs->{
-                printer.printRecord(rs.getString("title"),rs.getString("author"),rs.getString("isbn"),rs.getString("category"),rs.getString("keywords"),
-                        rs.getString("resource_type"),rs.getString("publisher"),rs.getObject("publication_year"),rs.getString("description"),rs.getString("language"),rs.getDouble("rating"));
-            });
-            printer.flush();
-            return out.toString();
-        } catch(Exception e){throw new IllegalStateException("Could not export books",e);}
+    try {
+        StringWriter out = new StringWriter();
+
+        var printer = CSVFormat.DEFAULT.builder()
+                .setHeader(
+                        "title",
+                        "author",
+                        "isbn",
+                        "category",
+                        "keywords",
+                        "resource_type",
+                        "publisher",
+                        "publication_year",
+                        "description",
+                        "language",
+                        "rating"
+                )
+                .build()
+                .print(out);
+
+        jdbc.query(
+                "SELECT * FROM books WHERE active=TRUE ORDER BY title",
+                rs -> {
+                    try {
+                        printer.printRecord(
+                                rs.getString("title"),
+                                rs.getString("author"),
+                                rs.getString("isbn"),
+                                rs.getString("category"),
+                                rs.getString("keywords"),
+                                rs.getString("resource_type"),
+                                rs.getString("publisher"),
+                                rs.getObject("publication_year"),
+                                rs.getString("description"),
+                                rs.getString("language"),
+                                rs.getDouble("rating")
+                        );
+                    } catch (java.io.IOException e) {
+                        throw new IllegalStateException(
+                                "Could not write books CSV",
+                                e
+                        );
+                    }
+                }
+        );
+
+        printer.flush();
+        return out.toString();
+
+    } catch (Exception e) {
+        throw new IllegalStateException(
+                "Could not export books",
+                e
+        );
     }
+}
 
     private static BookSummary book(java.sql.ResultSet r,double relevance)throws java.sql.SQLException{
         return new BookSummary(r.getLong("id"),r.getString("title"),r.getString("author"),r.getString("isbn"),r.getString("category"),
