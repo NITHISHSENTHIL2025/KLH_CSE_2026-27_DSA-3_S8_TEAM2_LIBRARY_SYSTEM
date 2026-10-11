@@ -24,6 +24,16 @@ public final class CryptoUtil {
         } catch (Exception e) { throw new IllegalStateException(e); }
     }
 
+    /** Normalizes raw values coming from QR/barcode scanners before hashing or matching. */
+    public static String normalizeScannedCode(String value) {
+        if (value == null) return "";
+        return value.strip()
+                .replace("\\uFEFF", "")
+                .replace("\\u200B", "")
+                .replace("\\u200C", "")
+                .replace("\\u200D", "");
+    }
+
     public static String hmacSha256(String secret, String value) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
