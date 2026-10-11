@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -131,8 +133,15 @@ public class LibraryService {
     public ImportResult importBooks(MultipartFile file, long adminId, String workstation) {
         int inserted=0, updated=0, skipped=0;
         List<String> warnings = new ArrayList<>();
-        try (var reader = new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8);
-             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).build().parse(reader)) {
+        try (var reader = csvReader(file);
+             CSVParser parser = CSVFormat.DEFAULT.builder()
+                     .setHeader()
+                     .setSkipHeaderRecord(true)
+                     .setTrim(true)
+                     .setIgnoreHeaderCase(true)
+                     .setIgnoreSurroundingSpaces(true)
+                     .build()
+                     .parse(reader)) {
             int row=1;
             for (CSVRecord r: parser) {
                 row++;
@@ -146,7 +155,19 @@ public class LibraryService {
                 String description=blank(value(r,"description"));
                 String language=safe(value(r,"language"),"English");
                 Double rating=parseDouble(value(r,"rating")); if(rating==null) rating=0d;
-                Long existing = isbn==null?null:jdbc.query("SELECT id FROM books WHERE isbn=?", rs->rs.next()?rs.getLong(1):null, isbn);
+                Long existing;
+                if (isbn != null) {
+                    existing = jdbc.query("SELECT id FROM books WHERE isbn=?", rs->rs.next()?rs.getLong(1):null, isbn);
+                } else {
+                    // CSV catalogues are allowed to omit ISBN. Match exact title+author so
+                    // re-importing the same real/demo catalogue updates instead of duplicating books.
+                    existing = jdbc.query("""
+                            SELECT id FROM books
+                            WHERE lower(title)=lower(?) AND lower(author)=lower(?)
+                            ORDER BY id
+                            LIMIT 1
+                            """, rs->rs.next()?rs.getLong(1):null, title, author);
+                }
                 Long bookId;
                 if (existing==null) {
                     bookId=jdbc.queryForObject("""
@@ -163,6 +184,7 @@ public class LibraryService {
                     updated++;
                 }
                 String barcode=value(r,"barcode"); if(barcode.isBlank()) barcode=value(r,"copy_barcode");
+                barcode = barcode.trim();
                 if(!barcode.isBlank() && jdbc.queryForList("SELECT id FROM book_copies WHERE barcode=?",Long.class,barcode).isEmpty())
                     jdbc.update("INSERT INTO book_copies(book_id,barcode,status) VALUES(?,?,'AVAILABLE')",bookId,barcode);
             }
@@ -178,8 +200,15 @@ public class LibraryService {
     public ImportResult importCopies(MultipartFile file, long adminId, String workstation) {
         int inserted=0, updated=0, skipped=0;
         List<String>warnings=new ArrayList<>();
-        try(var reader=new InputStreamReader(file.getInputStream(),StandardCharsets.UTF_8);
-            CSVParser parser=CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setTrim(true).build().parse(reader)){
+        try(var reader=csvReader(file);
+            CSVParser parser=CSVFormat.DEFAULT.builder()
+                    .setHeader()
+                    .setSkipHeaderRecord(true)
+                    .setTrim(true)
+                    .setIgnoreHeaderCase(true)
+                    .setIgnoreSurroundingSpaces(true)
+                    .build()
+                    .parse(reader)){
             int row=1;
             for(CSVRecord r:parser){
                 row++;
@@ -261,6 +290,14 @@ public class LibraryService {
                 r.getString("keywords"),r.getString("description"),r.getString("language"),r.getDouble("rating"),
                 r.getInt("total_copies"),r.getInt("available_copies"),relevance);
     }
+    private static BufferedReader csvReader(MultipartFile file) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8));
+        reader.mark(1);
+        int first = reader.read();
+        if (first != 0xFEFF) reader.reset(); // tolerate UTF-8 BOM written by Excel/Windows tools
+        return reader;
+    }
+
     private static String blank(String s){return s==null||s.isBlank()?null:s.trim();}
     private static String safe(String s,String d){return s==null||s.isBlank()?d:s.trim();}
     private static String value(CSVRecord r,String n){try{return r.isMapped(n)?r.get(n).trim():"";}catch(Exception e){return "";}}
