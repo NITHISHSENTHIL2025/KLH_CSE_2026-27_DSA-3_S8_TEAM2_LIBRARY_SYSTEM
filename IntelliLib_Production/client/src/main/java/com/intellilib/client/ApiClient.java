@@ -71,6 +71,7 @@ public final class ApiClient {
     public List<ClientModels.Suggestion> suggestions(String q){return sendType(base("/api/books/suggestions?q="+enc(q)+"&limit=8").GET().build(),new TypeReference<>(){});}
     public List<ClientModels.Book> popular(){return sendType(base("/api/books/popular?limit=12").GET().build(),new TypeReference<>(){});}
     public List<ClientModels.Book> recommended(){return sendType(base("/api/books/recommended?limit=12").GET().build(),new TypeReference<>(){});}
+    public List<ClientModels.Book> browse(String prefix,int limit){return sendType(base("/api/books/browse?prefix="+enc(prefix==null?"":prefix)+"&limit="+limit).GET().build(),new TypeReference<>(){});}
     public List<ClientModels.Book> related(long id){return sendType(base("/api/books/"+id+"/related?limit=8").GET().build(),new TypeReference<>(){});}
     public void viewed(long id){sendClass(base("/api/books/"+id+"/view").POST(HttpRequest.BodyPublishers.noBody()).build(),Void.class);}
 
