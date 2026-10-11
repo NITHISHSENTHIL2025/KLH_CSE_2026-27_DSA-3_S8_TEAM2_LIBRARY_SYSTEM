@@ -2,23 +2,27 @@ FROM maven:3.9.11-eclipse-temurin-21 AS build
 
 WORKDIR /app
 
+# Render's shared build IP can be throttled by repo.maven.apache.org.
+# Google Cloud provides a hosted mirror of Maven Central, so use it for
+# deterministic cloud builds while keeping the same Maven artifacts.
+RUN mkdir -p /root/.m2 && printf '%s\n' \
+  '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"' \
+  '          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' \
+  '          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">' \
+  '  <mirrors>' \
+  '    <mirror>' \
+  '      <id>google-maven-central</id>' \
+  '      <name>Google Cloud Maven Central mirror</name>' \
+  '      <url>https://maven-central.storage-download.googleapis.com/maven2/</url>' \
+  '      <mirrorOf>central</mirrorOf>' \
+  '    </mirror>' \
+  '  </mirrors>' \
+  '</settings>' > /root/.m2/settings.xml
+
 COPY pom.xml .
 COPY src ./src
 
-RUN set -eux; \
-    for i in 1 2 3 4 5; do \
-        mvn -B -ntp \
-            -DskipTests \
-            -Dmaven.wagon.http.retryHandler.count=5 \
-            -Dmaven.wagon.http.retryHandler.requestSentEnabled=true \
-            package && break; \
-        if [ "$i" = "5" ]; then \
-            echo "Maven build failed after 5 attempts"; \
-            exit 1; \
-        fi; \
-        echo "Maven Central temporarily rate-limited the build. Retrying in 30 seconds..."; \
-        sleep 30; \
-    done
+RUN mvn -B -ntp -DskipTests package
 
 FROM eclipse-temurin:21-jre
 
