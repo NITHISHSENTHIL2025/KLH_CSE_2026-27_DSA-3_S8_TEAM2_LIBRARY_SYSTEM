@@ -83,7 +83,7 @@ public final class ApiClient {
             ByteArrayOutputStream out=new ByteArrayOutputStream();
             out.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\""+file.getFileName()+"\"\r\nContent-Type: text/csv\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             out.write(data);out.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
-            return sendClass(base(endpoint).header("Content-Type","multipart/form-data; boundary="+boundary).POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray())).build(),ClientModels.ImportResult.class);
+            return sendClass(base(endpoint).timeout(Duration.ofMinutes(10)).header("Content-Type","multipart/form-data; boundary="+boundary).POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray())).build(),ClientModels.ImportResult.class);
         }catch(Exception e){throw e instanceof RuntimeException?(RuntimeException)e:new IllegalStateException(e);}
     }
 
