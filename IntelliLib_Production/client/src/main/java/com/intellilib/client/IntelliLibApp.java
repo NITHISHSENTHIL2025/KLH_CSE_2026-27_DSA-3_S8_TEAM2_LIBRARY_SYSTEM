@@ -164,13 +164,18 @@ public class IntelliLibApp extends Application {
         Label description=UiKit.muted(b.description()==null||b.description().isBlank()?"No description provided.":b.description());
         description.setMaxWidth(820);
 
+        UiKit.OverlayHandle[] currentSheet=new UiKit.OverlayHandle[1];
+        Consumer<Book> openRelated=x->{
+            if(currentSheet[0]!=null)currentSheet[0].close();
+            if(student)showStudentBook(x);
+            else run(()->api.related(x.id()),rel->showBookSheet(x,rel,false));
+        };
+
         HBox relatedRow=new HBox(10);
         if(related==null||related.isEmpty()){
             relatedRow.getChildren().add(UiKit.muted("No related books yet."));
         }else{
-            related.stream().limit(8).forEach(x->relatedRow.getChildren().add(
-                    new BookCard(x,student?this::showStudentBook:y->run(()->api.related(y.id()),rel->showBookSheet(y,rel,false)))
-            ));
+            related.stream().limit(8).forEach(x->relatedRow.getChildren().add(new BookCard(x,openRelated)));
         }
         ScrollPane relatedScroll=new ScrollPane(relatedRow);
         relatedScroll.setFitToHeight(true);
@@ -198,6 +203,7 @@ public class IntelliLibApp extends Application {
                 UiKit.h2("Related books"),relatedScroll,actions
         );
         UiKit.OverlayHandle h=UiKit.sheet(root,body,920);
+        currentSheet[0]=h;
         close.setOnAction(e->h.close());
     }
     private int detail(GridPane g,int row,String k,String v){if(v==null||v.isBlank())return row;Label key=UiKit.muted(k);Label value=new Label(v);value.setWrapText(true);g.add(key,0,row);g.add(value,1,row);return row+1;}
