@@ -97,3 +97,32 @@
 .scroll-pane { -fx-background-color: transparent; -fx-border-color: transparent; }
 .scroll-pane > .viewport { -fx-background-color: transparent; }
 .separator *.line { -fx-border-color: #e7e7e9; }
+
+
+/* Modal content must remain usable on smaller laptop screens. */
+.sheet-scroll {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.sheet-scroll > .viewport {
+    -fx-background-color: transparent;
+}
+.sheet-scroll .scroll-bar:vertical {
+    -fx-pref-width: 9px;
+}
+.sheet-scroll .scroll-bar:horizontal {
+    -fx-pref-height: 0px;
+}
+.section-caption {
+    -fx-font-size: 12px;
+    -fx-text-fill: #86868b;
+}
+.card-grid {
+    -fx-padding: 2 0 8 0;
+}
+.action-strip {
+    -fx-padding: 10 0 0 0;
+}
+.table-toolbar {
+    -fx-padding: 0 0 4 0;
+}
