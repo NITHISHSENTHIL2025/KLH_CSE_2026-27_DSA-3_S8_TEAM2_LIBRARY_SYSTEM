@@ -49,8 +49,14 @@ public class SearchEngine {
                 if(b.keywords()!=null) for(String k:b.keywords().split("[,;]")) if(!k.isBlank()) bucket(buckets,"k:"+norm(k),i);
             }
             for(List<Integer> list:buckets.values()){
-                int cap=Math.min(list.size(),12);
-                for(int a=0;a<cap;a++) for(int b=a+1;b<cap;b++) graph.connect(list.get(a),list.get(b));
+                int size=list.size();
+                if(size<2 || size>200) continue; // ignore giant generic buckets such as "computer science"
+                int neighbors=Math.min(5,size-1);
+                for(int i=0;i<size;i++){
+                    for(int step=1;step<=neighbors;step++){
+                        graph.connect(list.get(i),list.get((i+step)%size));
+                    }
+                }
             }
         }finally{lock.writeLock().unlock();}
     }
