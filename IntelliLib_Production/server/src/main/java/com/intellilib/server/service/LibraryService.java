@@ -64,10 +64,10 @@ public class LibraryService {
             """, (r,n) -> book(r,0), safeLimit);
     }
 
-    /** Recommendations use only this student's own loans/views plus real library metadata. */
+    /** Recommendations use only this student's own searches, loans and views plus real library metadata. */
     public List<BookSummary> recommended(long userId, int limit) {
         int safeLimit = Math.max(1, Math.min(30, limit));
-        List<String> categories = jdbc.queryForList("""
+        LinkedHashSet<String> categories = new LinkedHashSet<>(jdbc.queryForList("""
             SELECT category FROM (
               SELECT b.category, COUNT(*) score
               FROM (
@@ -78,18 +78,39 @@ public class LibraryService {
               WHERE b.category IS NOT NULL AND b.category<>''
               GROUP BY b.category ORDER BY score DESC LIMIT 5
             ) q
-            """, String.class, userId, userId);
+            """, String.class, userId, userId));
+
+        // Recent search intent is personal to this student. Map it through the in-memory
+        // search engine, then use only the matched categories for recommendation ranking.
+        List<String> recentQueries = jdbc.queryForList("""
+                SELECT query FROM search_history
+                WHERE user_id=? AND created_at>NOW()-INTERVAL '60 days'
+                ORDER BY created_at DESC LIMIT 15
+                """,String.class,userId);
+        for(String q:recentQueries){
+            if(q==null||q.isBlank())continue;
+            SearchResponse hits=search.search(q,5);
+            for(BookSummary b:hits.books()){
+                if(b.category()!=null&&!b.category().isBlank())categories.add(b.category());
+                if(categories.size()>=8)break;
+            }
+            if(categories.size()>=8)break;
+        }
+
         if (categories.isEmpty()) return popular(safeLimit);
-        String placeholders = String.join(",", Collections.nCopies(categories.size(), "?"));
-        List<Object> args = new ArrayList<>(categories);
+        List<String> selected=categories.stream().limit(8).toList();
+        String placeholders = String.join(",", Collections.nCopies(selected.size(), "?"));
+        List<Object> args = new ArrayList<>(selected);
         args.add(userId);
         args.add(safeLimit);
         String sql = "SELECT b.*, COUNT(DISTINCT c.id) total_copies, " +
-                "COUNT(DISTINCT c.id) FILTER(WHERE c.status=\'AVAILABLE\') available_copies, 0 borrow_count " +
+                "COUNT(DISTINCT c.id) FILTER(WHERE c.status='AVAILABLE') available_copies, 0 borrow_count " +
                 "FROM books b LEFT JOIN book_copies c ON c.book_id=b.id " +
                 "WHERE b.active=TRUE AND b.category IN (" + placeholders + ") " +
                 "AND b.id NOT IN (SELECT book_id FROM loans WHERE user_id=?) " +
-                "GROUP BY b.id ORDER BY COUNT(DISTINCT c.id) FILTER(WHERE c.status=\'AVAILABLE\') DESC,b.title LIMIT ?";
+                "GROUP BY b.id " +
+                "HAVING COUNT(DISTINCT c.id) FILTER(WHERE c.status='AVAILABLE') > 0 " +
+                "ORDER BY COUNT(DISTINCT c.id) FILTER(WHERE c.status='AVAILABLE') DESC,b.title LIMIT ?";
         return jdbc.query(sql, (r,n) -> book(r,0), args.toArray());
     }
 
