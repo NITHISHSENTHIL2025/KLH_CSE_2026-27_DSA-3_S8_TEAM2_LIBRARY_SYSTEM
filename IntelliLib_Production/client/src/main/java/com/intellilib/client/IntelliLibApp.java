@@ -147,24 +147,82 @@ public class IntelliLibApp extends Application {
     }
 
     private void showBookSheet(Book b,List<Book> related,boolean student){
-        VBox body=new VBox(16);body.setMaxWidth(760);
-        Label title=UiKit.title(b.title());Label author=UiKit.muted(b.author());author.setStyle("-fx-font-size:15px;");
+        VBox body=new VBox(15);body.setMaxWidth(860);
+        Label title=UiKit.title(b.title());title.setWrapText(true);
+        Label author=UiKit.muted(b.author());author.setStyle("-fx-font-size:15px;");
         String availability=b.availableCopies()>0?b.availableCopies()+" of "+b.totalCopies()+" copies available":"Currently unavailable";
         Label avail=new Label(availability);avail.getStyleClass().add(b.availableCopies()>0?"pill-success":"pill-muted");
+
         GridPane details=new GridPane();details.setHgap(22);details.setVgap(8);int row=0;
-        row=detail(details,row,"Category",b.category());row=detail(details,row,"ISBN",b.isbn());row=detail(details,row,"Publisher",b.publisher());row=detail(details,row,"Year",b.publicationYear()>0?String.valueOf(b.publicationYear()):"");row=detail(details,row,"Type",b.resourceType());
-        Label description=UiKit.muted(b.description()==null||b.description().isBlank()?"No description provided.":b.description());description.setMaxWidth(710);
-        FlowPane relatedPane=new FlowPane(10,10);if(related==null||related.isEmpty())relatedPane.getChildren().add(UiKit.muted("No related books yet."));else for(Book x:related)relatedPane.getChildren().add(new BookCard(x,student?this::showStudentBook:y->run(()->api.related(y.id()),rel->showBookSheet(y,rel,false))));
-        Button close=UiKit.secondary("Close");HBox actions=new HBox(9);actions.setAlignment(Pos.CENTER_RIGHT);actions.getChildren().add(close);
-        if(student){Button request=UiKit.primary("Request book");request.setDisable(b.availableCopies()<1);actions.getChildren().add(request);request.setOnAction(e->UiKit.confirm(root,"Request this book?",b.title()+"\n\nThe librarian will review the request before collection.","Request",()->run(()->{api.requestBorrow(b.id());return true;},ok->{UiKit.toast(root,"Request sent");request.setDisable(true);request.setText("Requested");})));}
-        else {Button addCopy=UiKit.primary("Scan & add physical copy");actions.getChildren().add(addCopy);addCopy.setOnAction(e->CameraScannerOverlay.open(root,"Scan the book copy","Scan the barcode or QR attached to this physical copy.",barcode->run(()->api.addCopy(b.id(),barcode),x->{UiKit.toast(root,"Physical copy added");})));}
-        body.getChildren().addAll(UiKit.eyebrow(b.resourceType()==null?"RESOURCE":b.resourceType()),title,author,avail,new Separator(),description,details,UiKit.h2("Related books"),relatedPane,actions);
-        UiKit.OverlayHandle h=UiKit.sheet(root,body,820);close.setOnAction(e->h.close());
+        row=detail(details,row,"Category",b.category());
+        row=detail(details,row,"ISBN",b.isbn());
+        row=detail(details,row,"Publisher",b.publisher());
+        row=detail(details,row,"Year",b.publicationYear()>0?String.valueOf(b.publicationYear()):"");
+        row=detail(details,row,"Language",b.language());
+        row=detail(details,row,"Type",b.resourceType());
+
+        Label description=UiKit.muted(b.description()==null||b.description().isBlank()?"No description provided.":b.description());
+        description.setMaxWidth(820);
+
+        HBox relatedRow=new HBox(10);
+        if(related==null||related.isEmpty()){
+            relatedRow.getChildren().add(UiKit.muted("No related books yet."));
+        }else{
+            related.stream().limit(8).forEach(x->relatedRow.getChildren().add(
+                    new BookCard(x,student?this::showStudentBook:y->run(()->api.related(y.id()),rel->showBookSheet(y,rel,false)))
+            ));
+        }
+        ScrollPane relatedScroll=new ScrollPane(relatedRow);
+        relatedScroll.setFitToHeight(true);
+        relatedScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        relatedScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        relatedScroll.setPannable(true);
+        relatedScroll.setPrefViewportHeight(205);
+        relatedScroll.getStyleClass().add("related-scroll");
+
+        Button close=UiKit.secondary("Close");
+        HBox actions=new HBox(9);actions.setAlignment(Pos.CENTER_RIGHT);actions.getStyleClass().add("action-strip");actions.getChildren().add(close);
+        if(student){
+            Button request=UiKit.primary(b.availableCopies()>0?"Request book":"Unavailable");
+            request.setDisable(b.availableCopies()<1);
+            actions.getChildren().add(request);
+            request.setOnAction(e->UiKit.confirm(root,"Request this book?",b.title()+"\n\nThe librarian will review the request before collection.","Request",()->run(()->{api.requestBorrow(b.id());return true;},ok->{UiKit.toast(root,"Request sent");request.setDisable(true);request.setText("Requested");})));
+        }else{
+            Button addCopy=UiKit.primary("Scan & add physical copy");actions.getChildren().add(addCopy);
+            addCopy.setOnAction(e->CameraScannerOverlay.open(root,"Scan the book copy","Scan the barcode or QR attached to this physical copy.",barcode->run(()->api.addCopy(b.id(),barcode),x->{UiKit.toast(root,"Physical copy added");addCopy.setText("Copy added");})));
+        }
+
+        body.getChildren().addAll(
+                UiKit.eyebrow(b.resourceType()==null?"RESOURCE":b.resourceType()),
+                title,author,avail,new Separator(),description,details,
+                UiKit.h2("Related books"),relatedScroll,actions
+        );
+        UiKit.OverlayHandle h=UiKit.sheet(root,body,920);
+        close.setOnAction(e->h.close());
     }
     private int detail(GridPane g,int row,String k,String v){if(v==null||v.isBlank())return row;Label key=UiKit.muted(k);Label value=new Label(v);value.setWrapText(true);g.add(key,0,row);g.add(value,1,row);return row+1;}
 
-    private void studentRequests(BorderPane sh){VBox p=page();p.getChildren().add(UiKit.title("My Requests"));VBox list=new VBox(10);p.getChildren().add(list);sh.setCenter(scroll(p));run(api::myRequests,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("No requests yet","Request a book from Search and it will appear here."));return;}for(var x:rows){Label s=new Label(prettyStatus(x.status()));s.getStyleClass().add(statusClass(x.status()));list.getChildren().add(UiKit.card(UiKit.h3(x.bookTitle()),UiKit.muted(x.author()),s));}});}
-    private void studentLoans(BorderPane sh){VBox p=page();p.getChildren().add(UiKit.title("My Books"));VBox list=new VBox(10);p.getChildren().add(list);sh.setCenter(scroll(p));run(api::myLoans,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("No borrowed books","Books appear here after the librarian issues a physical copy to you."));return;}for(var x:rows){String due=x.dueAt()==null?"":"Due "+x.dueAt().toLocalDate();Label s=new Label(prettyStatus(x.status()));s.getStyleClass().add(statusClass(x.status()));list.getChildren().add(UiKit.card(UiKit.h3(x.title()),UiKit.muted(x.author()),new Label("Copy "+x.barcode()+" • "+due),s));}});}
+    private void studentRequests(BorderPane sh){
+        VBox p=page();p.getChildren().add(UiKit.title("My Requests"));VBox list=new VBox(10);p.getChildren().add(list);sh.setCenter(scroll(p));
+        run(api::myRequests,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("No requests yet","Request a book from Search and it will appear here."));return;}
+            for(var x:rows){
+                Label s=new Label(prettyStatus(x.status()));s.getStyleClass().add(statusClass(x.status()));
+                String when=x.requestedAt()==null?"":"Requested "+formatTime(x.requestedAt());
+                String expiry=("APPROVED".equals(x.status())&&x.expiresAt()!=null)?" • collect before "+x.expiresAt().toLocalDate():"";
+                list.getChildren().add(UiKit.card(UiKit.h3(x.bookTitle()),UiKit.muted(x.author()),UiKit.muted(when+expiry),s));
+            }
+        });
+    }
+    private void studentLoans(BorderPane sh){
+        VBox p=page();p.getChildren().add(UiKit.title("My Books"));VBox list=new VBox(10);p.getChildren().add(list);sh.setCenter(scroll(p));
+        run(api::myLoans,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("No borrowed books","Books appear here after the librarian issues a physical copy to you."));return;}
+            for(var x:rows){
+                String timing=x.returnedAt()!=null?"Returned "+x.returnedAt().toLocalDate():(x.dueAt()==null?"":"Due "+x.dueAt().toLocalDate());
+                Label s=new Label(prettyStatus(x.status()));s.getStyleClass().add(statusClass(x.status()));
+                list.getChildren().add(UiKit.card(UiKit.h3(x.title()),UiKit.muted(x.author()),UiKit.muted("Copy "+x.barcode()+(timing.isBlank()?"":" • "+timing)),s));
+            }
+        });
+    }
     private void studentNotifications(BorderPane sh){VBox p=page();p.getChildren().add(UiKit.title("Notifications"));VBox list=new VBox(10);p.getChildren().add(list);sh.setCenter(scroll(p));run(api::notifications,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("You're all caught up","Approvals, issue confirmations and due reminders appear here."));return;}for(var x:rows)list.getChildren().add(UiKit.card(UiKit.h3(x.title()),UiKit.muted(x.message()),UiKit.muted(formatTime(x.createdAt()))));});}
 
     // ---------- Administrator ----------
@@ -221,7 +279,8 @@ public class IntelliLibApp extends Application {
                 x.availableCopies() > 0 ? "pill-success" : "pill-muted"
             );
 
-            Button approve = UiKit.primary("Approve");
+            Button approve = UiKit.primary(x.availableCopies()>0?"Approve":"No copy available");
+            approve.setDisable(x.availableCopies()<=0);
             Button reject = UiKit.secondary("Reject");
 
             HBox actions = new HBox(8, reject, approve);
@@ -230,6 +289,7 @@ public class IntelliLibApp extends Application {
             VBox card = UiKit.card(
                 UiKit.h3(x.userName() + "  →  " + x.bookTitle()),
                 UiKit.muted(x.studentCode() + " • " + x.author()),
+                UiKit.muted(x.requestedAt()==null?"":"Requested "+formatTime(x.requestedAt())),
                 available,
                 actions
             );
@@ -303,11 +363,43 @@ public class IntelliLibApp extends Application {
     }
 
     private void adminStudents(BorderPane sh){
-        VBox p=page();Button importCsv=UiKit.primary("Import students CSV"),register=UiKit.secondary("Register one student");HBox tools=new HBox(8,importCsv,register);TableView<UserView> table=new TableView<>();
-        TableColumn<UserView,String> code=column("Student ID",UserView::studentCode),name=column("Name",UserView::name),dept=column("Department",UserView::department),year=column("Year",UserView::studyYear);TableColumn<UserView,String> state=column("Status",u->u.active()?"Active":"Disabled");table.getColumns().addAll(code,name,dept,year,state);table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);table.setPrefHeight(600);
-        p.getChildren().addAll(UiKit.title("Students"),UiKit.muted("Card codes are securely mapped to real student records."),tools,table);sh.setCenter(p);
-        Runnable load=()->run(api::users,rows->table.getItems().setAll(rows));load.run();
-        importCsv.setOnAction(e->chooseCsv("Import students CSV",path->run(()->api.importStudents(path),r->{showImportResult(r);load.run();})));register.setOnAction(e->CameraScannerOverlay.open(root,"Scan the student's ID card","This scan enrolls the actual code printed on the student's college ID.",cardCode->registerStudentForm(cardCode,load)));
+        VBox p=page();
+        Button importCsv=UiKit.primary("Import students CSV"),register=UiKit.secondary("Register one student"),refresh=UiKit.secondary("Refresh"),toggle=UiKit.secondary("Disable selected");
+        toggle.setDisable(true);
+        HBox tools=new HBox(8,importCsv,register,refresh,toggle);tools.getStyleClass().add("table-toolbar");
+        TextField filter=new TextField();filter.setPromptText("Search student ID, name or department…");filter.getStyleClass().add("search-field");
+        TableView<UserView> table=new TableView<>();
+        table.setPlaceholder(UiKit.muted("No students found."));
+        TableColumn<UserView,String> code=column("Student ID",UserView::studentCode),name=column("Name",UserView::name),dept=column("Department",UserView::department),year=column("Year",UserView::studyYear),email=column("Email",UserView::email);
+        TableColumn<UserView,String> state=column("Status",u->u.active()?"Active":"Disabled");
+        table.getColumns().addAll(code,name,dept,year,email,state);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);table.setPrefHeight(620);VBox.setVgrow(table,Priority.ALWAYS);
+
+        p.getChildren().addAll(UiKit.title("Students"),UiKit.muted("Enroll real ID cards, find student records and control access safely."),tools,filter,table);sh.setCenter(p);
+
+        final List<UserView>[] all=new List[]{List.of()};
+        Runnable applyFilter=()->{
+            String needle=filter.getText()==null?"":filter.getText().trim().toLowerCase(Locale.ROOT);
+            if(needle.isBlank())table.getItems().setAll(all[0]);
+            else table.getItems().setAll(all[0].stream().filter(u->
+                    (u.studentCode()!=null&&u.studentCode().toLowerCase(Locale.ROOT).contains(needle))||
+                    (u.name()!=null&&u.name().toLowerCase(Locale.ROOT).contains(needle))||
+                    (u.department()!=null&&u.department().toLowerCase(Locale.ROOT).contains(needle))||
+                    (u.email()!=null&&u.email().toLowerCase(Locale.ROOT).contains(needle))
+            ).toList());
+        };
+        Runnable load=()->run(api::users,rows->{all[0]=rows;applyFilter.run();});
+        load.run();
+
+        filter.textProperty().addListener((o,a,b)->applyFilter.run());
+        table.getSelectionModel().selectedItemProperty().addListener((o,a,b)->{
+            toggle.setDisable(b==null);
+            if(b!=null)toggle.setText(b.active()?"Disable selected":"Enable selected");
+        });
+        toggle.setOnAction(e->{UserView u=table.getSelectionModel().getSelectedItem();if(u==null)return;boolean next=!u.active();run(()->{api.setUserActive(u.id(),next);return true;},ok->{UiKit.toast(root,next?"Student enabled":"Student disabled");load.run();});});
+        refresh.setOnAction(e->load.run());
+        importCsv.setOnAction(e->chooseCsv("Import students CSV",path->run(()->api.importStudents(path),r->{showImportResult(r);load.run();})));
+        register.setOnAction(e->CameraScannerOverlay.open(root,"Scan the student's ID card","This scan enrolls the actual code printed on the student's college ID.",cardCode->registerStudentForm(cardCode,load)));
     }
     private <T> TableColumn<T,String> column(String title,java.util.function.Function<T,String> get){TableColumn<T,String> c=new TableColumn<>(title);c.setCellValueFactory(x->new javafx.beans.property.SimpleStringProperty(Optional.ofNullable(get.apply(x.getValue())).orElse("")));return c;}
     private void registerStudentForm(String cardCode,Runnable reload){TextField studentId=new TextField(),name=new TextField(),email=new TextField(),dept=new TextField(),year=new TextField();studentId.setPromptText("Student ID *");name.setPromptText("Name *");email.setPromptText("Email");dept.setPromptText("Department");year.setPromptText("Year");String normalized=cardCode==null?"":cardCode.strip();if(normalized.matches("[A-Za-z0-9_-]{6,64}"))studentId.setText(normalized);Button cancel=UiKit.secondary("Cancel"),create=UiKit.primary("Register student");HBox buttons=new HBox(8,cancel,create);buttons.setAlignment(Pos.CENTER_RIGHT);Label detected=UiKit.muted(normalized.isBlank()?"ID card scanned successfully.":"Card detected: "+normalized+". Verify the student details below.");VBox body=new VBox(9,UiKit.h2("Register student"),detected,studentId,name,email,dept,year,buttons);UiKit.OverlayHandle h=UiKit.sheet(root,body,560);cancel.setOnAction(e->h.close());Platform.runLater(name::requestFocus);create.setOnAction(e->{if(studentId.getText().isBlank()||name.getText().isBlank()){UiKit.showError(root,"Student ID and name are required.");return;}Map<String,Object> data=new LinkedHashMap<>();data.put("studentCode",studentId.getText().trim());data.put("name",name.getText().trim());data.put("email",email.getText().trim());data.put("department",dept.getText().trim());data.put("studyYear",year.getText().trim());data.put("cardCode",normalized);h.close();run(()->api.createUser(data),u->{UiKit.toast(root,"Student registered: "+u.name());reload.run();});});}
@@ -330,7 +422,13 @@ public class IntelliLibApp extends Application {
     }
     private void showCirculationSuccess(CirculationResult r,boolean issue){String detail=r.studentName()+"\n"+r.bookTitle()+"\nCopy: "+r.bookBarcode()+(r.dueAt()!=null?"\nDue: "+r.dueAt().toLocalDate():"");UiKit.showMessage(root,issue?"Book issued":"Return complete",detail);}
 
-    private void adminLoans(BorderPane sh){VBox p=page();p.getChildren().add(UiKit.title("Loans"));TableView<AdminLoanView> table=new TableView<>();table.getColumns().addAll(column("Student",AdminLoanView::studentName),column("Student ID",AdminLoanView::studentCode),column("Book",AdminLoanView::bookTitle),column("Copy",AdminLoanView::barcode),column("Status",AdminLoanView::status),column("Due",x->x.dueAt()==null?"":x.dueAt().toLocalDate().toString()));table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);table.setPrefHeight(650);p.getChildren().add(table);sh.setCenter(p);run(api::adminLoans,rows->table.getItems().setAll(rows));}
+    private void adminLoans(BorderPane sh){
+        VBox p=page();HBox head=new HBox(12);head.setAlignment(Pos.CENTER_LEFT);Label title=UiKit.title("Loans");Button refresh=UiKit.secondary("Refresh");head.getChildren().addAll(title,refresh);
+        TableView<AdminLoanView> table=new TableView<>();table.setPlaceholder(UiKit.muted("No loan history yet."));
+        table.getColumns().addAll(column("Student",AdminLoanView::studentName),column("Student ID",AdminLoanView::studentCode),column("Book",AdminLoanView::bookTitle),column("Copy",AdminLoanView::barcode),column("Status",x->prettyStatus(x.status())),column("Issued",x->x.issuedAt()==null?"":x.issuedAt().toLocalDate().toString()),column("Due / Returned",x->x.returnedAt()!=null?"Returned "+x.returnedAt().toLocalDate():(x.dueAt()==null?"":"Due "+x.dueAt().toLocalDate())));
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);table.setPrefHeight(650);VBox.setVgrow(table,Priority.ALWAYS);p.getChildren().addAll(head,table);sh.setCenter(p);
+        Runnable load=()->run(api::adminLoans,rows->table.getItems().setAll(rows));load.run();refresh.setOnAction(e->load.run());
+    }
     private void adminActivity(BorderPane sh){VBox p=page();p.getChildren().add(UiKit.title("Activity"));VBox list=new VBox(8);p.getChildren().add(list);sh.setCenter(scroll(p));run(api::activity,rows->{list.getChildren().clear();if(rows.isEmpty()){list.getChildren().add(UiKit.empty("No activity yet","Administrative actions and circulation events appear here."));return;}for(var x:rows){String actor=x.actorName()==null?"System":x.actorName();list.getChildren().add(UiKit.card(UiKit.h3(humanAction(x.action())),UiKit.muted(actor+" • "+formatTime(x.createdAt())),UiKit.muted(x.details()==null?"":x.details())));}});}
 
     // ---------- File/import helpers ----------
@@ -340,7 +438,7 @@ public class IntelliLibApp extends Application {
 
     private static Integer parseInt(String s){try{return s==null||s.isBlank()?null:Integer.parseInt(s.trim());}catch(Exception e){return null;}}
     private static String formatTime(java.time.OffsetDateTime t){return t==null?"":t.format(DateTimeFormatter.ofPattern("dd MMM yyyy • h:mm a"));}
-    private static String prettyStatus(String s){if(s==null)return "";return switch(s){case"REQUESTED"->"Pending";case"APPROVED"->"Approved — ready for collection";case"REJECTED"->"Not approved";case"ISSUED"->"Issued";case"RETURNED"->"Returned";case"OVERDUE"->"Overdue";case"EXPIRED"->"Approval expired";default->s.substring(0,1)+s.substring(1).toLowerCase();};}
+    private static String prettyStatus(String s){if(s==null||s.isBlank())return "";return switch(s){case"REQUESTED"->"Pending";case"APPROVED"->"Approved — ready for collection";case"REJECTED"->"Not approved";case"ISSUED"->"Issued";case"RETURNED"->"Returned";case"OVERDUE"->"Overdue";case"EXPIRED"->"Approval expired";default->s.substring(0,1)+s.substring(1).toLowerCase();};}
     private static String statusClass(String s){return ("APPROVED".equals(s)||"RETURNED".equals(s)||"ISSUED".equals(s))?"pill-success":"pill-muted";}
     private static String humanAction(String s){if(s==null)return "Activity";String x=s.replace('_',' ').toLowerCase();return Character.toUpperCase(x.charAt(0))+x.substring(1);}
 
