@@ -265,10 +265,28 @@ public class IntelliLibApp extends Application {
         VBox p=page();HBox tools=new HBox(8);Button importBooks=UiKit.primary("Import books CSV"),importCopies=UiKit.secondary("Import copy barcodes"),export=UiKit.secondary("Export books"),add=UiKit.secondary("Add book");tools.getChildren().addAll(importBooks,importCopies,export,add);
         TextField q=new TextField();q.setPromptText("Search the live library…");q.getStyleClass().add("search-field");Label summary=UiKit.muted("");FlowPane results=new FlowPane(14,14);p.getChildren().addAll(UiKit.title("Library"),UiKit.muted("Real metadata and exact physical copies. Import data or add a book manually."),tools,q,summary,results);sh.setCenter(scroll(p));
         q.setOnAction(e->doAdminSearch(q.getText(),results,summary));
-        importBooks.setOnAction(e->chooseCsv("Import books CSV",path->run(()->api.importBooks(path),this::showImportResult)));
-        importCopies.setOnAction(e->chooseCsv("Import physical copies CSV",path->run(()->api.importCopies(path),this::showImportResult)));
+        Consumer<ImportResult> imported = r -> {
+            showImportResult(r);
+            run(api::dashboard,d->{
+                summary.setText(d.books()>0 ? String.format("%,d books • %,d physical copies",d.books(),d.copies()) : "");
+                results.getChildren().setAll(
+                        d.books()==0
+                                ? UiKit.empty("No books imported","Use ‘Import books CSV’ to load the real library catalogue.")
+                                : UiKit.empty("Library catalogue ready","Your live catalogue is loaded. Search by title, author, ISBN, category or keyword above.")
+                );
+            });
+        };
+        importBooks.setOnAction(e->chooseCsv("Import books CSV",path->run(()->api.importBooks(path),imported)));
+        importCopies.setOnAction(e->chooseCsv("Import physical copies CSV",path->run(()->api.importCopies(path),imported)));
         export.setOnAction(e->exportBooks());add.setOnAction(e->addBookOverlay());
-        run(api::dashboard,d->{if(d.books()==0)results.getChildren().setAll(UiKit.empty("No books imported","Use ‘Import books CSV’ to load the real library catalogue."));});
+        run(api::dashboard,d->{
+            summary.setText(d.books()>0 ? String.format("%,d books • %,d physical copies",d.books(),d.copies()) : "");
+            results.getChildren().setAll(
+                    d.books()==0
+                            ? UiKit.empty("No books imported","Use ‘Import books CSV’ to load the real library catalogue.")
+                            : UiKit.empty("Library catalogue ready","Your live catalogue is loaded. Search by title, author, ISBN, category or keyword above.")
+            );
+        });
     }
     private void doAdminSearch(String query,FlowPane results,Label summary){if(query==null||query.isBlank())return;run(()->api.search(query),r->{summary.setText(r.total()+" result"+(r.total()==1?"":"s"));results.getChildren().clear();if(r.books().isEmpty())results.getChildren().add(UiKit.empty("No results","No live library record matched your search."));else for(Book b:r.books())results.getChildren().add(new BookCard(b,x->run(()->api.related(x.id()),rel->showBookSheet(x,rel,false))));});}
 
