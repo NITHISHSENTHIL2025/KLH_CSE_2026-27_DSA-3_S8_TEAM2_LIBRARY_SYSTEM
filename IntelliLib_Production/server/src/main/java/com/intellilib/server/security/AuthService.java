@@ -24,10 +24,13 @@ public class AuthService {
 
     @Transactional
     public LoginResponse loginCard(String cardToken, String workstationId) {
-        if (cardToken == null || cardToken.isBlank()) throw new IllegalArgumentException("Card not recognized");
-        String hash = CryptoUtil.hmacSha256(settings.cardPepper(), cardToken.trim());
+        String code = CryptoUtil.normalizeScannedCode(cardToken);
+        if (code.isBlank()) throw new IllegalArgumentException("No ID code was detected. Please scan the college ID again.");
+        String hash = CryptoUtil.hmacSha256(settings.cardPepper(), code);
         List<SessionUser> users = jdbc.query("SELECT * FROM users WHERE card_hash=? AND active=TRUE AND role='STUDENT'", this::mapUser, hash);
-        if (users.isEmpty()) throw new IllegalArgumentException("Card not recognized or account disabled");
+        if (users.isEmpty()) {
+            throw new IllegalArgumentException("This college ID is not enrolled in IntelliLib yet, or the student account is disabled. Ask the librarian to register the card first.");
+        }
         return createSession(users.getFirst(), workstationId);
     }
 
