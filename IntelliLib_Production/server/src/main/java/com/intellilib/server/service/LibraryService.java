@@ -44,7 +44,22 @@ public class LibraryService {
             ORDER BY borrow_count DESC, b.title
             LIMIT ?
             """, (r,n) -> book(r,0), safeLimit);
-        return rows;
+        if (!rows.isEmpty()) return rows;
+
+        // A brand-new real library has no issue history yet. Show recently imported
+        // available resources until genuine circulation data exists; never fabricate counts.
+        return jdbc.query("""
+            SELECT b.*, COUNT(DISTINCT c.id) total_copies,
+                   COUNT(DISTINCT c.id) FILTER(WHERE c.status='AVAILABLE') available_copies,
+                   0 borrow_count
+            FROM books b
+            LEFT JOIN book_copies c ON c.book_id=b.id
+            WHERE b.active=TRUE
+            GROUP BY b.id
+            HAVING COUNT(DISTINCT c.id) FILTER(WHERE c.status='AVAILABLE') > 0
+            ORDER BY b.created_at DESC, b.title
+            LIMIT ?
+            """, (r,n) -> book(r,0), safeLimit);
     }
 
     /** Recommendations use only this student's own loans/views plus real library metadata. */
