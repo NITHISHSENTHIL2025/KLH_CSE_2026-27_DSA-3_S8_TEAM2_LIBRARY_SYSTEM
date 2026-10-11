@@ -133,6 +133,19 @@ public class LibraryService {
     public ImportResult importBooks(MultipartFile file, long adminId, String workstation) {
         int inserted=0, updated=0, skipped=0;
         List<String> warnings = new ArrayList<>();
+
+        // Load lookup state once. This avoids thousands of extra SELECT round-trips
+        // when importing a large catalogue over Render -> Neon.
+        Map<String,Long> booksByIsbn = new HashMap<>();
+        Map<String,Long> booksByTitleAuthor = new HashMap<>();
+        jdbc.query("SELECT id,isbn,title,author FROM books WHERE active=TRUE", rs -> {
+            long id=rs.getLong("id");
+            String existingIsbn=blank(rs.getString("isbn"));
+            if(existingIsbn!=null) booksByIsbn.put(existingIsbn,id);
+            booksByTitleAuthor.put(bookKey(rs.getString("title"),rs.getString("author")),id);
+        });
+        Set<String> knownBarcodes = new HashSet<>(jdbc.queryForList("SELECT barcode FROM book_copies",String.class));
+        List<Object[]> copiesToInsert = new ArrayList<>();
         try (var reader = csvReader(file);
              CSVParser parser = CSVFormat.DEFAULT.builder()
                      .setHeader()
@@ -155,19 +168,9 @@ public class LibraryService {
                 String description=blank(value(r,"description"));
                 String language=safe(value(r,"language"),"English");
                 Double rating=parseDouble(value(r,"rating")); if(rating==null) rating=0d;
-                Long existing;
-                if (isbn != null) {
-                    existing = jdbc.query("SELECT id FROM books WHERE isbn=?", rs->rs.next()?rs.getLong(1):null, isbn);
-                } else {
-                    // CSV catalogues are allowed to omit ISBN. Match exact title+author so
-                    // re-importing the same real/demo catalogue updates instead of duplicating books.
-                    existing = jdbc.query("""
-                            SELECT id FROM books
-                            WHERE lower(title)=lower(?) AND lower(author)=lower(?)
-                            ORDER BY id
-                            LIMIT 1
-                            """, rs->rs.next()?rs.getLong(1):null, title, author);
-                }
+                Long existing = isbn!=null
+                        ? booksByIsbn.get(isbn)
+                        : booksByTitleAuthor.get(bookKey(title,author));
                 Long bookId;
                 if (existing==null) {
                     bookId=jdbc.queryForObject("""
@@ -175,6 +178,8 @@ public class LibraryService {
                         VALUES(?,?,?,?,?,?,?,?,?,?,?) RETURNING id
                         """,Long.class,title,author,isbn,category,keywords,type,publisher,year,description,language,rating);
                     inserted++;
+                    if(isbn!=null) booksByIsbn.put(isbn,bookId);
+                    booksByTitleAuthor.put(bookKey(title,author),bookId);
                 } else {
                     bookId=existing;
                     jdbc.update("""
@@ -182,12 +187,16 @@ public class LibraryService {
                         WHERE id=?
                         """,title,author,category,keywords,type,publisher,year,description,language,rating,existing);
                     updated++;
+                    if(isbn!=null) booksByIsbn.put(isbn,bookId);
+                    booksByTitleAuthor.put(bookKey(title,author),bookId);
                 }
                 String barcode=value(r,"barcode"); if(barcode.isBlank()) barcode=value(r,"copy_barcode");
                 barcode = barcode.trim();
-                if(!barcode.isBlank() && jdbc.queryForList("SELECT id FROM book_copies WHERE barcode=?",Long.class,barcode).isEmpty())
-                    jdbc.update("INSERT INTO book_copies(book_id,barcode,status) VALUES(?,?,'AVAILABLE')",bookId,barcode);
+                if(!barcode.isBlank() && knownBarcodes.add(barcode))
+                    copiesToInsert.add(new Object[]{bookId,barcode});
             }
+            if(!copiesToInsert.isEmpty())
+                jdbc.batchUpdate("INSERT INTO book_copies(book_id,barcode,status) VALUES(?,?,'AVAILABLE')",copiesToInsert);
         } catch (Exception e) {
             throw new IllegalArgumentException("Could not import books CSV: "+e.getMessage(),e);
         }
@@ -298,6 +307,9 @@ public class LibraryService {
         return reader;
     }
 
+    private static String bookKey(String title,String author){
+        return safe(title,"").toLowerCase(Locale.ROOT)+"\u0000"+safe(author,"").toLowerCase(Locale.ROOT);
+    }
     private static String blank(String s){return s==null||s.isBlank()?null:s.trim();}
     private static String safe(String s,String d){return s==null||s.isBlank()?d:s.trim();}
     private static String value(CSVRecord r,String n){try{return r.isMapped(n)?r.get(n).trim():"";}catch(Exception e){return "";}}
