@@ -24,10 +24,13 @@ public final class ApiModels {
     public record NotificationView(long id, String title, String message, OffsetDateTime createdAt, boolean read) {}
 
     public record AdminRequestView(long id, long userId, String studentCode, String userName, long bookId, String bookTitle,
-                                   String author, String status, OffsetDateTime requestedAt, int availableCopies) {}
+                                   String author, String status, OffsetDateTime requestedAt, OffsetDateTime expiresAt,
+                                   int availableCopies) {}
     public record DecisionRequest(String note) {}
     public record IssueRequest(String studentCardToken, String bookBarcode, String workstationId) {}
+    public record ProvideBookRequest(String studentCardToken, String bookBarcode, String workstationId) {}
     public record ReturnRequest(String studentCardToken, String bookBarcode, String workstationId) {}
+    public record ReturnByLoanRequest(String studentCardToken, String workstationId) {}
     public record CirculationResult(String status, String message, String studentName, String bookTitle,
                                     String bookBarcode, OffsetDateTime dueAt) {}
 
@@ -49,5 +52,6 @@ public final class ApiModels {
     public record ImportResult(int inserted, int updated, int skipped, List<String> warnings) {}
     public record ApprovedRequestMini(long requestId,long bookId,String title,String author,OffsetDateTime expiresAt) {}
     public record StudentScanResult(long userId,String studentCode,String name,String department,List<ApprovedRequestMini> approvedRequests) {}
+    public record ReturnStudentView(long userId,String studentCode,String name,String department,List<LoanView> activeLoans) {}
     public record BookScanResult(long bookId,String title,String author,String isbn,String barcode,String status) {}
 }
