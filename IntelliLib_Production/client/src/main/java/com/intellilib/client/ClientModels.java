@@ -13,7 +13,7 @@ public final class ClientModels {
     public record BorrowRequestView(long id,long bookId,String bookTitle,String author,String status,OffsetDateTime requestedAt,OffsetDateTime decisionAt,OffsetDateTime expiresAt){}
     public record LoanView(long id,long bookId,String title,String author,String barcode,String status,OffsetDateTime issuedAt,OffsetDateTime dueAt,OffsetDateTime returnedAt){}
     public record NotificationView(long id,String title,String message,OffsetDateTime createdAt,boolean read){}
-    public record AdminRequestView(long id,long userId,String studentCode,String userName,long bookId,String bookTitle,String author,String status,OffsetDateTime requestedAt,int availableCopies){}
+    public record AdminRequestView(long id,long userId,String studentCode,String userName,long bookId,String bookTitle,String author,String status,OffsetDateTime requestedAt,OffsetDateTime expiresAt,int availableCopies){}
     public record UserView(long id,String studentCode,String name,String email,String department,String studyYear,boolean active,OffsetDateTime createdAt){}
     public record CreatedUser(long id,String studentCode,String name){}
     public record Dashboard(long books,long copies,long availableCopies,long students,long activeLoans,long pendingRequests,long overdueLoans){}
@@ -23,5 +23,6 @@ public final class ClientModels {
     public record ImportResult(int inserted,int updated,int skipped,List<String> warnings){}
     public record ApprovedRequestMini(long requestId,long bookId,String title,String author,OffsetDateTime expiresAt){}
     public record StudentScanResult(long userId,String studentCode,String name,String department,List<ApprovedRequestMini> approvedRequests){}
+    public record ReturnStudentView(long userId,String studentCode,String name,String department,List<LoanView> activeLoans){}
     public record BookScanResult(long bookId,String title,String author,String isbn,String barcode,String status){}
 }
