@@ -28,10 +28,10 @@ public final class CryptoUtil {
     public static String normalizeScannedCode(String value) {
         if (value == null) return "";
         return value.strip()
-                .replace("\\uFEFF", "")
-                .replace("\\u200B", "")
-                .replace("\\u200C", "")
-                .replace("\\u200D", "");
+                .replace("\uFEFF", "")
+                .replace("\u200B", "")
+                .replace("\u200C", "")
+                .replace("\u200D", "");
     }
 
     public static String hmacSha256(String secret, String value) {
