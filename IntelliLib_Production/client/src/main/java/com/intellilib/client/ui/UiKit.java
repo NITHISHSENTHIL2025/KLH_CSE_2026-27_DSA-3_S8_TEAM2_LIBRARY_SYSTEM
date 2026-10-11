@@ -42,9 +42,8 @@ public final class UiKit {
     }
 
     public static VBox empty(String title,String message){
-        Label mark=new Label("○");mark.getStyleClass().add("empty-mark");
         Label t=h3(title);Label m=muted(message);m.setMaxWidth(460);m.setAlignment(Pos.CENTER);
-        VBox box=new VBox(9,mark,t,m);box.setAlignment(Pos.CENTER);box.setPadding(new Insets(48));box.getStyleClass().add("empty-state");return box;
+        VBox box=new VBox(9,t,m);box.setAlignment(Pos.CENTER);box.setPadding(new Insets(48));box.getStyleClass().add("empty-state");return box;
     }
 
     public static VBox statCard(String label,long value){
