@@ -121,6 +121,10 @@ public class CirculationService {
         if(student.id!=req.userId)
             throw new IllegalStateException("The scanned student ID does not match this approved request");
 
+        // Use the same per-book lock as approval so "last available copy" decisions
+        // cannot race against a book being handed over on another admin workstation.
+        jdbc.queryForObject("SELECT id FROM books WHERE id=? FOR UPDATE",Long.class,req.bookId);
+
         Copy copy=copyForUpdate(barcode);
         if(copy.bookId!=req.bookId)
             throw new IllegalStateException("The scanned physical copy is not the approved book");
