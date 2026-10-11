@@ -131,21 +131,14 @@ public class LibraryService {
 
     @Transactional
     public ImportResult importBooks(MultipartFile file, long adminId, String workstation) {
-        int inserted=0, updated=0, skipped=0;
+        int skipped = 0;
         List<String> warnings = new ArrayList<>();
 
-        // Load lookup state once. This avoids thousands of extra SELECT round-trips
-        // when importing a large catalogue over Render -> Neon.
-        Map<String,Long> booksByIsbn = new HashMap<>();
-        Map<String,Long> booksByTitleAuthor = new HashMap<>();
-        jdbc.query("SELECT id,isbn,title,author FROM books WHERE active=TRUE", rs -> {
-            long id=rs.getLong("id");
-            String existingIsbn=blank(rs.getString("isbn"));
-            if(existingIsbn!=null) booksByIsbn.put(existingIsbn,id);
-            booksByTitleAuthor.put(bookKey(rs.getString("title"),rs.getString("author")),id);
-        });
-        Set<String> knownBarcodes = new HashSet<>(jdbc.queryForList("SELECT barcode FROM book_copies",String.class));
-        List<Object[]> copiesToInsert = new ArrayList<>();
+        // Parse first, then talk to PostgreSQL in batches. Doing one SELECT/INSERT per CSV row
+        // is too slow for a cloud database and can make Render return a 502 before the request finishes.
+        LinkedHashMap<String, ImportBookRow> logicalBooks = new LinkedHashMap<>();
+        List<ImportCopyRow> copies = new ArrayList<>();
+
         try (var reader = csvReader(file);
              CSVParser parser = CSVFormat.DEFAULT.builder()
                      .setHeader()
@@ -155,55 +148,164 @@ public class LibraryService {
                      .setIgnoreSurroundingSpaces(true)
                      .build()
                      .parse(reader)) {
-            int row=1;
-            for (CSVRecord r: parser) {
-                row++;
-                String title=value(r,"title"), author=value(r,"author"), isbn=blank(value(r,"isbn"));
-                if (title.isBlank() || author.isBlank()) { skipped++; warnings.add("Row "+row+": title and author are required"); continue; }
-                String category=safe(value(r,"category"),"General");
-                String keywords=blank(value(r,"keywords"));
-                String type=safe(value(r,"resource_type"),"BOOK");
-                String publisher=blank(value(r,"publisher"));
-                Integer year=parseInt(value(r,"publication_year")); if(year==null) year=parseInt(value(r,"year"));
-                String description=blank(value(r,"description"));
-                String language=safe(value(r,"language"),"English");
-                Double rating=parseDouble(value(r,"rating")); if(rating==null) rating=0d;
-                Long existing = isbn!=null
-                        ? booksByIsbn.get(isbn)
-                        : booksByTitleAuthor.get(bookKey(title,author));
-                Long bookId;
-                if (existing==null) {
-                    bookId=jdbc.queryForObject("""
-                        INSERT INTO books(title,author,isbn,category,keywords,resource_type,publisher,publication_year,description,language,rating)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?) RETURNING id
-                        """,Long.class,title,author,isbn,category,keywords,type,publisher,year,description,language,rating);
-                    inserted++;
-                    if(isbn!=null) booksByIsbn.put(isbn,bookId);
-                    booksByTitleAuthor.put(bookKey(title,author),bookId);
-                } else {
-                    bookId=existing;
-                    jdbc.update("""
-                        UPDATE books SET title=?,author=?,category=?,keywords=?,resource_type=?,publisher=?,publication_year=?,description=?,language=?,rating=?,active=TRUE,updated_at=NOW()
-                        WHERE id=?
-                        """,title,author,category,keywords,type,publisher,year,description,language,rating,existing);
-                    updated++;
-                    if(isbn!=null) booksByIsbn.put(isbn,bookId);
-                    booksByTitleAuthor.put(bookKey(title,author),bookId);
+
+            int rowNumber = 1;
+            for (CSVRecord r : parser) {
+                rowNumber++;
+                String title = value(r, "title");
+                String author = value(r, "author");
+                String isbn = blank(value(r, "isbn"));
+
+                if (title.isBlank() || author.isBlank()) {
+                    skipped++;
+                    warnings.add("Row " + rowNumber + ": title and author are required");
+                    continue;
                 }
-                String barcode=value(r,"barcode"); if(barcode.isBlank()) barcode=value(r,"copy_barcode");
+
+                ImportBookRow book = new ImportBookRow(
+                        title,
+                        author,
+                        isbn,
+                        safe(value(r, "category"), "General"),
+                        blank(value(r, "keywords")),
+                        safe(value(r, "resource_type"), "BOOK"),
+                        blank(value(r, "publisher")),
+                        firstNonNull(parseInt(value(r, "publication_year")), parseInt(value(r, "year"))),
+                        blank(value(r, "description")),
+                        safe(value(r, "language"), "English"),
+                        Optional.ofNullable(parseDouble(value(r, "rating"))).orElse(0d)
+                );
+
+                String key = importBookKey(book);
+                logicalBooks.put(key, book); // repeated ISBN/title rows are the same logical book
+
+                String barcode = value(r, "barcode");
+                if (barcode.isBlank()) barcode = value(r, "copy_barcode");
                 barcode = barcode.trim();
-                if(!barcode.isBlank() && knownBarcodes.add(barcode))
-                    copiesToInsert.add(new Object[]{bookId,barcode});
+                if (!barcode.isBlank()) copies.add(new ImportCopyRow(key, barcode));
             }
-            if(!copiesToInsert.isEmpty())
-                jdbc.batchUpdate("INSERT INTO book_copies(book_id,barcode,status) VALUES(?,?,'AVAILABLE')",copiesToInsert);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Could not import books CSV: "+e.getMessage(),e);
+            throw new IllegalArgumentException("Could not import books CSV: " + e.getMessage(), e);
         }
-        audit.log(adminId,workstation,"BOOKS_IMPORTED","CSV",null,"inserted="+inserted+", updated="+updated+", skipped="+skipped);
+
+        if (logicalBooks.isEmpty()) {
+            audit.log(adminId, workstation, "BOOKS_IMPORTED", "CSV", null,
+                    "inserted=0, updated=0, skipped=" + skipped);
+            return new ImportResult(0, 0, skipped, warnings.stream().limit(50).toList());
+        }
+
+        // Snapshot the current catalogue once. This turns thousands of cloud round-trips
+        // into a handful of database operations.
+        Map<String, Long> existingByKey = loadBookIdsByImportKey();
+        List<ImportBookRow> toInsert = new ArrayList<>();
+        List<BookUpdateRow> toUpdate = new ArrayList<>();
+
+        for (var entry : logicalBooks.entrySet()) {
+            Long id = existingByKey.get(entry.getKey());
+            if (id == null) toInsert.add(entry.getValue());
+            else toUpdate.add(new BookUpdateRow(id, entry.getValue()));
+        }
+
+        if (!toInsert.isEmpty()) {
+            List<Object[]> args = new ArrayList<>(toInsert.size());
+            for (ImportBookRow b : toInsert) {
+                args.add(new Object[]{
+                        b.title(), b.author(), b.isbn(), b.category(), b.keywords(), b.resourceType(),
+                        b.publisher(), b.publicationYear(), b.description(), b.language(), b.rating()
+                });
+            }
+            jdbc.batchUpdate("""
+                    INSERT INTO books(title,author,isbn,category,keywords,resource_type,publisher,publication_year,description,language,rating)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                    """, args);
+        }
+
+        if (!toUpdate.isEmpty()) {
+            List<Object[]> args = new ArrayList<>(toUpdate.size());
+            for (BookUpdateRow x : toUpdate) {
+                ImportBookRow b = x.book();
+                args.add(new Object[]{
+                        b.title(), b.author(), b.category(), b.keywords(), b.resourceType(), b.publisher(),
+                        b.publicationYear(), b.description(), b.language(), b.rating(), x.id()
+                });
+            }
+            jdbc.batchUpdate("""
+                    UPDATE books
+                    SET title=?,author=?,category=?,keywords=?,resource_type=?,publisher=?,publication_year=?,
+                        description=?,language=?,rating=?,active=TRUE,updated_at=NOW()
+                    WHERE id=?
+                    """, args);
+        }
+
+        // Refresh IDs once after inserts so copies can be attached without per-row lookups.
+        Map<String, Long> idsByKey = loadBookIdsByImportKey();
+        Set<String> existingBarcodes = new HashSet<>(jdbc.queryForList(
+                "SELECT barcode FROM book_copies", String.class));
+        Set<String> seenBarcodes = new HashSet<>();
+        List<Object[]> copyArgs = new ArrayList<>();
+
+        for (ImportCopyRow copy : copies) {
+            if (!seenBarcodes.add(copy.barcode())) continue;
+            if (existingBarcodes.contains(copy.barcode())) continue;
+            Long bookId = idsByKey.get(copy.bookKey());
+            if (bookId == null) {
+                skipped++;
+                warnings.add("Copy barcode could not be linked to a book: " + copy.barcode());
+                continue;
+            }
+            copyArgs.add(new Object[]{bookId, copy.barcode()});
+        }
+
+        if (!copyArgs.isEmpty()) {
+            jdbc.batchUpdate(
+                    "INSERT INTO book_copies(book_id,barcode,status) VALUES(?,?,'AVAILABLE')",
+                    copyArgs
+            );
+        }
+
+        int inserted = toInsert.size();
+        int updated = toUpdate.size();
+
+        audit.log(adminId, workstation, "BOOKS_IMPORTED", "CSV", null,
+                "inserted=" + inserted + ", updated=" + updated + ", skipped=" + skipped +
+                        ", copies_added=" + copyArgs.size());
+
+        // Rebuild once after the whole import, never once per book.
         search.rebuild();
-        return new ImportResult(inserted,updated,skipped,warnings.stream().limit(50).toList());
+        return new ImportResult(inserted, updated, skipped, warnings.stream().limit(50).toList());
     }
+
+    private Map<String, Long> loadBookIdsByImportKey() {
+        Map<String, Long> out = new HashMap<>();
+        jdbc.query("SELECT id,title,author,isbn FROM books", rs -> {
+            String isbn = blank(rs.getString("isbn"));
+            String key = isbn != null
+                    ? "isbn:" + isbn.toLowerCase(Locale.ROOT)
+                    : "title:" + normalizedImportText(rs.getString("title")) + "|author:" + normalizedImportText(rs.getString("author"));
+            out.putIfAbsent(key, rs.getLong("id"));
+        });
+        return out;
+    }
+
+    private static String importBookKey(ImportBookRow b) {
+        return b.isbn() != null
+                ? "isbn:" + b.isbn().toLowerCase(Locale.ROOT)
+                : "title:" + normalizedImportText(b.title()) + "|author:" + normalizedImportText(b.author());
+    }
+
+    private static String normalizedImportText(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+    }
+
+    private static <T> T firstNonNull(T a, T b) { return a != null ? a : b; }
+
+    private record ImportBookRow(
+            String title, String author, String isbn, String category, String keywords,
+            String resourceType, String publisher, Integer publicationYear, String description,
+            String language, Double rating) {}
+
+    private record ImportCopyRow(String bookKey, String barcode) {}
+    private record BookUpdateRow(long id, ImportBookRow book) {}
 
     @Transactional
     public ImportResult importCopies(MultipartFile file, long adminId, String workstation) {
