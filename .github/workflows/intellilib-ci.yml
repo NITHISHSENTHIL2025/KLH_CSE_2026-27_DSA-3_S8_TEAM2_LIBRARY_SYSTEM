@@ -1,0 +1,38 @@
+name: IntelliLib CI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "IntelliLib_Production/**"
+      - ".github/workflows/intellilib-ci.yml"
+  pull_request:
+    paths:
+      - "IntelliLib_Production/**"
+      - ".github/workflows/intellilib-ci.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: |
+            IntelliLib_Production/server/pom.xml
+            IntelliLib_Production/client/pom.xml
+
+      - name: Build backend
+        working-directory: IntelliLib_Production/server
+        run: mvn -B -ntp -DskipTests package
+
+      - name: Build desktop client
+        working-directory: IntelliLib_Production/client
+        run: mvn -B -ntp -DskipTests package
