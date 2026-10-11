@@ -342,23 +342,17 @@ public class IntelliLibApp extends Application {
                         return;
                     }
 
-                    CameraScannerOverlay.open(root,
-                            "Scan physical book",
-                            request.userName()+" verified. Now scan the exact copy of “"+request.bookTitle()+"” being provided.",
-                            barcode->run(()->api.inspectBook(barcode),book->{
-                                if(book.bookId()!=request.bookId()){
-                                    UiKit.showError(root,"Wrong book. This request is for “"+request.bookTitle()+"”.");
-                                    return;
-                                }
-                                if(!"AVAILABLE".equals(book.status())){
-                                    UiKit.showError(root,"This physical copy is "+prettyStatus(book.status())+" and cannot be provided.");
-                                    return;
-                                }
+                    String availability=request.availableCopies()==1
+                            ?"1 available copy will be assigned to this loan."
+                            :request.availableCopies()+" available copies are in the inventory pool; IntelliLib will assign one available copy.";
 
-                                run(()->api.provideRequest(request.id(),cardCode,barcode),result->{
-                                    showCirculationSuccess(result,true);
-                                    reload.run();
-                                });
+                    UiKit.confirm(root,
+                            "Provide this book?",
+                            student.name()+" is verified.\n\n"+request.bookTitle()+"\n"+availability+"\n\nNo physical barcode scan is required for unlabelled inventory.",
+                            "Provide book",
+                            ()->run(()->api.provideRequest(request.id(),cardCode,""),result->{
+                                showCirculationSuccess(result,true);
+                                reload.run();
                             }));
                 }));
     }
