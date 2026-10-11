@@ -125,11 +125,27 @@ public class CirculationService {
         // cannot race against a book being handed over on another admin workstation.
         jdbc.queryForObject("SELECT id FROM books WHERE id=? FOR UPDATE",Long.class,req.bookId);
 
-        Copy copy=copyForUpdate(barcode);
-        if(copy.bookId!=req.bookId)
-            throw new IllegalStateException("The scanned physical copy is not the approved book");
-        if(!"AVAILABLE".equals(copy.status))
-            throw new IllegalStateException("This physical copy is not available");
+        Copy copy;
+        String normalizedBarcode = barcode == null ? "" : barcode.trim();
+        if(normalizedBarcode.isBlank()){
+            List<Copy> availableCopies=jdbc.query("""
+                    SELECT id,book_id,barcode,status
+                    FROM book_copies
+                    WHERE book_id=? AND status='AVAILABLE'
+                    ORDER BY id
+                    LIMIT 1
+                    FOR UPDATE
+                    """,(r,n)->new Copy(r.getLong("id"),r.getLong("book_id"),r.getString("barcode"),r.getString("status")),req.bookId);
+            if(availableCopies.isEmpty())
+                throw new IllegalStateException("No physical copy is currently available");
+            copy=availableCopies.getFirst();
+        }else{
+            copy=copyForUpdate(normalizedBarcode);
+            if(copy.bookId!=req.bookId)
+                throw new IllegalStateException("The scanned physical copy is not the approved book");
+            if(!"AVAILABLE".equals(copy.status))
+                throw new IllegalStateException("This physical copy is not available");
+        }
 
         List<Long> existingLoan=jdbc.queryForList("""
                 SELECT id FROM loans
