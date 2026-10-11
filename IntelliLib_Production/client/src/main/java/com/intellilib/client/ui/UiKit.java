@@ -99,12 +99,16 @@ public final class UiKit {
         overlay.setOpacity(0);
         shell.setScaleX(.985);
         shell.setScaleY(.985);
+        OverlayHandle handle=new OverlayHandle(root,overlay,shell);
+        overlay.setFocusTraversable(true);
+        overlay.setOnKeyPressed(e->{if(e.getCode()==javafx.scene.input.KeyCode.ESCAPE)handle.close();});
         Timeline in=new Timeline(new KeyFrame(Duration.millis(170),
                 new KeyValue(overlay.opacityProperty(),1,Interpolator.EASE_BOTH),
                 new KeyValue(shell.scaleXProperty(),1,Interpolator.EASE_BOTH),
                 new KeyValue(shell.scaleYProperty(),1,Interpolator.EASE_BOTH)));
         in.play();
-        return new OverlayHandle(root,overlay,shell);
+        Platform.runLater(overlay::requestFocus);
+        return handle;
     }
 
     public static final class OverlayHandle{
