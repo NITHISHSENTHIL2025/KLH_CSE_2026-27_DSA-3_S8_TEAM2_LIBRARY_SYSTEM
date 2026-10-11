@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: IntelliLib Server
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/intellilib}
+    username: ${SPRING_DATASOURCE_USERNAME:intellilib}
+    password: ${SPRING_DATASOURCE_PASSWORD:intellilib_local_change_me}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:8}
+      minimum-idle: 1
+      connection-timeout: 15000
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 40MB
+      max-request-size: 40MB
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+  address: 0.0.0.0
+  forward-headers-strategy: framework
+app:
+  card-pepper: ${APP_CARD_PEPPER:local-development-only-change-me}
+  demo-data: false
+  bootstrap-admin-email: ${APP_BOOTSTRAP_ADMIN_EMAIL:admin@intellilib.local}
+  bootstrap-admin-password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:Admin@12345}
+  default-due-days: ${APP_DEFAULT_DUE_DAYS:14}
+logging:
+  level:
+    root: INFO
+    com.intellilib: INFO

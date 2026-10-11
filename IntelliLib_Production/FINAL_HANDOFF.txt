@@ -1,0 +1,36 @@
+INTELLILIB PRODUCTION FINAL — HANDOFF
+=====================================
+
+PRODUCT
+- Only Student + Administrator roles.
+- Real in-app webcam QR/barcode scanning.
+- No auto-seeded fake production books or fake dashboard metrics.
+- Real books/students/copies imported by Admin.
+- Render backend + Neon PostgreSQL supported.
+- Student request -> Admin approve/reject -> scan Student ID -> scan exact physical book -> issue -> return.
+- Live WebSocket notifications.
+
+CLOUD
+1. Push this folder to GitHub.
+2. In Render, use render.yaml or create a Docker Web Service with root directory server/.
+3. Set DATABASE_URL to the Neon connection URL.
+4. Set strong APP_CARD_PEPPER, APP_BOOTSTRAP_ADMIN_EMAIL and APP_BOOTSTRAP_ADMIN_PASSWORD secrets.
+5. Wait for /api/health to become healthy.
+6. Open IntelliLib -> Server settings -> paste the Render base URL.
+
+REAL DATA
+- data/templates/students_template.csv
+- data/templates/books_template.csv
+- data/templates/book_copies_template.csv
+
+WINDOWS APP
+Run scripts\BUILD_WINDOWS_PORTABLE.bat on a Windows PC with JDK 21.
+Output: client\dist\IntelliLib\IntelliLib.exe
+The resulting app-image bundles Java, so target PCs do not need Docker, Maven or Java.
+
+READ FIRST
+- README.md
+- docs\RENDER_NEON_DEPLOYMENT.md
+- docs\REAL_DATA_IMPORT.md
+- docs\SECURITY.md
+- VALIDATION_REPORT.md

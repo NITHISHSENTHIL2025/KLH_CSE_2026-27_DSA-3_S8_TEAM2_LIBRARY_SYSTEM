@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: intellilib
+      POSTGRES_USER: intellilib
+      POSTGRES_PASSWORD: intellilib_local_change_me
+    volumes:
+      - intellilib_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intellilib -d intellilib"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ./server
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/intellilib
+      SPRING_DATASOURCE_USERNAME: intellilib
+      SPRING_DATASOURCE_PASSWORD: intellilib_local_change_me
+      APP_CARD_PEPPER: local-dev-card-pepper-change-before-real-use
+      APP_BOOTSTRAP_ADMIN_EMAIL: admin@intellilib.local
+      APP_BOOTSTRAP_ADMIN_PASSWORD: Admin@12345
+      APP_DEFAULT_DUE_DAYS: "14"
+      SERVER_PORT: "8080"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  intellilib_pg:

@@ -1,0 +1,2 @@
+package com.intellilib.client;
+public final class SessionContext { private static String token; private static ClientModels.SessionUser user; private SessionContext(){} public static void set(ClientModels.LoginResponse r){token=r.sessionToken();user=r.user();} public static String token(){return token;} public static ClientModels.SessionUser user(){return user;} public static boolean signedIn(){return token!=null;} public static void clear(){token=null;user=null;} }
