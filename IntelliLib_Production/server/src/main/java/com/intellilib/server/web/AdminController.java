@@ -27,10 +27,13 @@ public class AdminController {
     private SessionUser me(HttpServletRequest r){return auth.requireAdmin(AuthHeader.token(r));}
 
     @GetMapping("/dashboard") public Dashboard dashboard(HttpServletRequest r){me(r);return admin.dashboard();}
-    @GetMapping("/requests") public List<AdminRequestView> pending(HttpServletRequest r){me(r);return circulation.pending();}
+    @GetMapping("/requests") public List<AdminRequestView> requests(HttpServletRequest r){me(r);return circulation.activeRequests();}
     @PostMapping("/requests/{id}/approve") public Map<String,Object> approve(@PathVariable long id,@RequestBody(required=false) DecisionRequest d,HttpServletRequest r){SessionUser u=me(r);circulation.approve(id,u.id(),r.getHeader("X-Workstation-Id"),d==null?null:d.note());return Map.of("ok",true);}
     @PostMapping("/requests/{id}/reject") public Map<String,Object> reject(@PathVariable long id,@RequestBody(required=false) DecisionRequest d,HttpServletRequest r){SessionUser u=me(r);circulation.reject(id,u.id(),r.getHeader("X-Workstation-Id"),d==null?null:d.note());return Map.of("ok",true);}
+    @PostMapping("/requests/{id}/provide") public CirculationResult provide(@PathVariable long id,@RequestBody ProvideBookRequest q,HttpServletRequest r){SessionUser u=me(r);return circulation.provideApprovedRequest(id,q.studentCardToken(),q.bookBarcode(),u.id(),q.workstationId());}
     @PostMapping("/scan/student") public StudentScanResult inspectStudent(@RequestBody Map<String,String> q,HttpServletRequest r){me(r);return circulation.inspectStudent(q.get("cardCode"));}
+    @PostMapping("/return/student") public ReturnStudentView inspectReturns(@RequestBody Map<String,String> q,HttpServletRequest r){me(r);return circulation.inspectReturns(q.get("cardCode"));}
+    @PostMapping("/return/loan/{loanId}") public CirculationResult returnLoan(@PathVariable long loanId,@RequestBody ReturnByLoanRequest q,HttpServletRequest r){SessionUser u=me(r);return circulation.returnLoan(q.studentCardToken(),loanId,u.id(),q.workstationId());}
     @PostMapping("/scan/book") public BookScanResult inspectBook(@RequestBody Map<String,String> q,HttpServletRequest r){me(r);return circulation.inspectBook(q.get("barcode"));}
     @PostMapping("/issue") public CirculationResult issue(@RequestBody IssueRequest q,HttpServletRequest r){SessionUser u=me(r);return circulation.issue(q.studentCardToken(),q.bookBarcode(),u.id(),q.workstationId());}
     @PostMapping("/return") public CirculationResult returned(@RequestBody ReturnRequest q,HttpServletRequest r){SessionUser u=me(r);return circulation.returned(q.studentCardToken(),q.bookBarcode(),u.id(),q.workstationId());}
