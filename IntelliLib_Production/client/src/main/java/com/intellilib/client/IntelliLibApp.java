@@ -466,9 +466,7 @@ public class IntelliLibApp extends Application {
     }
 
     private void loadStudentReturns(String cardCode,VBox content,Button scanButton){
-        scanButton.setDisable(true);
         run(()->api.inspectReturnStudent(cardCode),student->{
-            scanButton.setDisable(false);
             scanButton.setText("Scan another student");
             content.getChildren().clear();
 
