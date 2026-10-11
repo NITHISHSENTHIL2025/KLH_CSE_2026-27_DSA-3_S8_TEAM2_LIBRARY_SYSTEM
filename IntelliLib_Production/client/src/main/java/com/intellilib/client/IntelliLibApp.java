@@ -109,9 +109,13 @@ public class IntelliLibApp extends Application {
 
     // ---------- Student ----------
     private void showStudent(){
-        SessionUser u=SessionContext.user();BorderPane[] ref=new BorderPane[1];
-        BorderPane sh=shell(new String[]{"Home","Search","My Requests","My Books","Notifications"},item->showStudentPage(ref[0],item));ref[0]=sh;set(sh);
-        realtime=new RealtimeClient();realtime.connect(config,u.id(),m->UiKit.toast(root,String.valueOf(m.getOrDefault("message","Library update"))),null);
+        SessionUser u=SessionContext.user();BorderPane[] ref=new BorderPane[1];String[] current={"Home"};
+        BorderPane sh=shell(new String[]{"Home","Search","My Requests","My Books","Notifications"},item->{current[0]=item;showStudentPage(ref[0],item);});ref[0]=sh;set(sh);
+        realtime=new RealtimeClient();
+        realtime.connect(config,u.id(),m->Platform.runLater(()->{
+            UiKit.toast(root,String.valueOf(m.getOrDefault("message","Library update")));
+            if(!"Search".equals(current[0]))showStudentPage(sh,current[0]);
+        }),null);
         showStudentPage(sh,"Home");
     }
     private void showStudentPage(BorderPane sh,String page){switch(page){case"Home"->studentHome(sh);case"Search"->studentSearch(sh,"");case"My Requests"->studentRequests(sh);case"My Books"->studentLoans(sh);case"Notifications"->studentNotifications(sh);}}
@@ -233,9 +237,15 @@ public class IntelliLibApp extends Application {
 
     // ---------- Administrator ----------
     private void showAdmin(String initial){
-        BorderPane[] ref=new BorderPane[1];String[] pages={"Dashboard","Requests","Library","Students","Issue / Return","Loans","Activity"};
-        BorderPane sh=shell(pages,item->showAdminPage(ref[0],item));ref[0]=sh;set(sh);
-        realtime=new RealtimeClient();realtime.connect(config,SessionContext.user().id(),m->UiKit.toast(root,String.valueOf(m.getOrDefault("message","Update"))),m->UiKit.toast(root,"New borrow request"));
+        BorderPane[] ref=new BorderPane[1];String[] current={initial};String[] pages={"Dashboard","Requests","Library","Students","Issue / Return","Loans","Activity"};
+        BorderPane sh=shell(pages,item->{current[0]=item;showAdminPage(ref[0],item);});ref[0]=sh;set(sh);
+        realtime=new RealtimeClient();
+        realtime.connect(config,SessionContext.user().id(),
+                m->Platform.runLater(()->UiKit.toast(root,String.valueOf(m.getOrDefault("message","Update")))),
+                m->Platform.runLater(()->{
+                    UiKit.toast(root,"New borrow request");
+                    if("Requests".equals(current[0])||"Dashboard".equals(current[0]))showAdminPage(sh,current[0]);
+                }));
         showAdminPage(sh,initial);
     }
     private void showAdminPage(BorderPane sh,String page){switch(page){case"Dashboard"->adminDashboard(sh);case"Requests"->adminRequests(sh);case"Library"->adminLibrary(sh);case"Students"->adminStudents(sh);case"Issue / Return"->adminCirculation(sh);case"Loans"->adminLoans(sh);case"Activity"->adminActivity(sh);}}
