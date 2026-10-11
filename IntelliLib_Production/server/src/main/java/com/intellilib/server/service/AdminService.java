@@ -36,17 +36,21 @@ public class AdminService {
     public CreatedUser createStudent(NewUserRequest r, long adminId, String workstation) {
         require(r.studentCode(), "Student ID");
         require(r.name(), "Name");
-        require(r.cardCode(), "Card code");
-        String cardHash = CryptoUtil.hmacSha256(settings.cardPepper(), r.cardCode().trim());
-        if(!jdbc.queryForList("SELECT id FROM users WHERE student_code=?",Long.class,r.studentCode().trim()).isEmpty()) throw new IllegalArgumentException("Student ID already exists");
+        String studentCode = CryptoUtil.normalizeScannedCode(r.studentCode());
+        String cardCode = CryptoUtil.normalizeScannedCode(r.cardCode());
+        // KLH student cards encode the student ID in the QR. When an imported/manual record
+        // does not provide a separate card code, use the real student ID as the card value.
+        if (cardCode.isBlank()) cardCode = studentCode;
+        String cardHash = CryptoUtil.hmacSha256(settings.cardPepper(), cardCode);
+        if(!jdbc.queryForList("SELECT id FROM users WHERE student_code=?",Long.class,studentCode).isEmpty()) throw new IllegalArgumentException("Student ID already exists");
         if(!jdbc.queryForList("SELECT id FROM users WHERE card_hash=?",Long.class,cardHash).isEmpty()) throw new IllegalArgumentException("This ID card is already registered");
         Long id = jdbc.queryForObject("""
                 INSERT INTO users(student_code,name,email,department,study_year,role,card_hash,active)
                 VALUES(?,?,?,?,?,'STUDENT',?,TRUE) RETURNING id
                 """, Long.class,
-                r.studentCode().trim(), r.name().trim(), blank(r.email()), blank(r.department()), blank(r.studyYear()), cardHash);
-        audit.log(adminId, workstation, "STUDENT_CREATED", "USER", id, r.studentCode().trim());
-        return new CreatedUser(id, r.studentCode().trim(), r.name().trim());
+                studentCode, r.name().trim(), blank(r.email()), blank(r.department()), blank(r.studyYear()), cardHash);
+        audit.log(adminId, workstation, "STUDENT_CREATED", "USER", id, studentCode);
+        return new CreatedUser(id, studentCode, r.name().trim());
     }
 
     public List<UserView> users() {
@@ -72,14 +76,16 @@ public class AdminService {
             int row = 1;
             for (CSVRecord r : parser) {
                 row++;
-                String code = value(r,"student_code");
+                String code = CryptoUtil.normalizeScannedCode(value(r,"student_code"));
                 String name = value(r,"name");
-                String card = value(r,"card_code");
-                if (code.isBlank() || name.isBlank() || card.isBlank()) {
+                String card = CryptoUtil.normalizeScannedCode(value(r,"card_code"));
+                if (code.isBlank() || name.isBlank()) {
                     skipped++;
-                    warnings.add("Row " + row + ": student_code, name and card_code are required");
+                    warnings.add("Row " + row + ": student_code and name are required");
                     continue;
                 }
+                // For colleges where the QR payload is the student ID, card_code may be omitted.
+                if (card.isBlank()) card = code;
                 String email = value(r,"email");
                 String department = value(r,"department");
                 String year = value(r,"study_year");
