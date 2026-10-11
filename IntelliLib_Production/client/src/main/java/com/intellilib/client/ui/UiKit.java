@@ -71,10 +71,39 @@ public final class UiKit {
     }
 
     public static OverlayHandle sheet(StackPane root,Node content,double maxWidth){
-        StackPane overlay=new StackPane();Region backdrop=new Region();backdrop.getStyleClass().add("overlay-backdrop");backdrop.prefWidthProperty().bind(root.widthProperty());backdrop.prefHeightProperty().bind(root.heightProperty());
-        VBox shell=new VBox(content);shell.setPadding(new Insets(28));shell.setMaxWidth(maxWidth);shell.getStyleClass().add("sheet");overlay.getChildren().addAll(backdrop,shell);StackPane.setAlignment(shell,Pos.CENTER);StackPane.setMargin(shell,new Insets(28));root.getChildren().add(overlay);
-        overlay.setOpacity(0);shell.setScaleX(.985);shell.setScaleY(.985);
-        Timeline in=new Timeline(new KeyFrame(Duration.millis(170),new KeyValue(overlay.opacityProperty(),1,Interpolator.EASE_BOTH),new KeyValue(shell.scaleXProperty(),1,Interpolator.EASE_BOTH),new KeyValue(shell.scaleYProperty(),1,Interpolator.EASE_BOTH)));in.play();
+        StackPane overlay=new StackPane();
+        Region backdrop=new Region();
+        backdrop.getStyleClass().add("overlay-backdrop");
+        backdrop.prefWidthProperty().bind(root.widthProperty());
+        backdrop.prefHeightProperty().bind(root.heightProperty());
+
+        ScrollPane scroller=new ScrollPane(content);
+        scroller.setFitToWidth(true);
+        scroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroller.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroller.setPannable(false);
+        scroller.getStyleClass().add("sheet-scroll");
+
+        VBox shell=new VBox(scroller);
+        shell.setPadding(new Insets(24));
+        shell.setMaxWidth(maxWidth);
+        shell.getStyleClass().add("sheet");
+        shell.maxHeightProperty().bind(root.heightProperty().subtract(48));
+        VBox.setVgrow(scroller,Priority.ALWAYS);
+
+        overlay.getChildren().addAll(backdrop,shell);
+        StackPane.setAlignment(shell,Pos.CENTER);
+        StackPane.setMargin(shell,new Insets(24));
+        root.getChildren().add(overlay);
+
+        overlay.setOpacity(0);
+        shell.setScaleX(.985);
+        shell.setScaleY(.985);
+        Timeline in=new Timeline(new KeyFrame(Duration.millis(170),
+                new KeyValue(overlay.opacityProperty(),1,Interpolator.EASE_BOTH),
+                new KeyValue(shell.scaleXProperty(),1,Interpolator.EASE_BOTH),
+                new KeyValue(shell.scaleYProperty(),1,Interpolator.EASE_BOTH)));
+        in.play();
         return new OverlayHandle(root,overlay,shell);
     }
 
